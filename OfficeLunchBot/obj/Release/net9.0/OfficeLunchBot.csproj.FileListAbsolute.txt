@@ -41,3 +41,4 @@ C:\Users\Akbarchik\Desktop\OfficeLunchBot\OfficeLunchBot\obj\Release\net9.0\refi
 C:\Users\Akbarchik\Desktop\OfficeLunchBot\OfficeLunchBot\obj\Release\net9.0\OfficeLunchBot.pdb
 C:\Users\Akbarchik\Desktop\OfficeLunchBot\OfficeLunchBot\obj\Release\net9.0\OfficeLunchBot.genruntimeconfig.cache
 C:\Users\Akbarchik\Desktop\OfficeLunchBot\OfficeLunchBot\obj\Release\net9.0\ref\OfficeLunchBot.dll
+C:\Users\Akbarchik\Desktop\OfficeLunchBot\OfficeLunchBot\obj\Release\net9.0\OfficeLunchBot.sourcelink.json
