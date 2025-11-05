@@ -25,7 +25,7 @@ class Program
     const string DataFile = "responses.csv";
     const long AdminChannelId = -1003112040803;
 
- static async Task Main()
+static async Task Main()
 {
     Console.OutputEncoding = Encoding.UTF8;
     LoadResponses();
@@ -33,32 +33,22 @@ class Program
     string token = Environment.GetEnvironmentVariable("8345872765:AAFCkGFu7Hlx0KG9r3lRIkjeTFQ5aPL15kU") ?? "";
     if (string.IsNullOrWhiteSpace(token))
     {
-        Console.WriteLine("❌ Ошибка: BOT_TOKEN не задан в переменных окружения!");
+        Console.WriteLine("❌ Ошибка: переменная окружения BOT_TOKEN не задана!");
         return;
     }
 
     var bot = new TelegramBotClient(token);
 
-    try
-    {
-        var me = await bot.GetMeAsync();
-        Console.WriteLine($"✅ Бот @{me.Username} запущен и готов к работе.");
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"❌ Ошибка подключения к Telegram: {ex.Message}");
-        return;
-    }
+    var me = await bot.GetMeAsync();
+    Console.WriteLine($"✅ Бот @{me.Username} запущен и слушает обновления...");
 
-    using CancellationTokenSource cts = new();
+    using var cts = new CancellationTokenSource();
 
-    // Полностью разрешаем все типы обновлений
-    ReceiverOptions receiverOptions = new ReceiverOptions
+    var receiverOptions = new ReceiverOptions
     {
-        AllowedUpdates = null // null = все типы обновлений
+        AllowedUpdates = null // важно! принимает все типы обновлений
     };
 
-    // StartReceiving работает асинхронно
     bot.StartReceiving(
         HandleUpdateAsync,
         HandleErrorAsync,
@@ -66,16 +56,13 @@ class Program
         cts.Token
     );
 
-    // Запускаем задачи опроса и отчёта
     _ = ScheduleDailyReminder(bot);
     _ = ScheduleDailyReport(bot);
 
-    // Бесконечный цикл, чтобы процесс не завершился
-    while (true)
-    {
-        await Task.Delay(1000);
-    }
+    // бесконечный цикл — Railway теперь не завершает процесс
+    await Task.Delay(-1);
 }
+
 
 
 
