@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\Akbarchik\\Desktop\\OfficeLunchBot\\OfficeLunchBot\\OfficeLunchBot.csproj": {}
+    "C:\\Users\\Akbarchik\\Desktop\\OfficelunchBot\\OfficelunchBot\\OfficeLunchBot.csproj": {}
   },
   "projects": {
-    "C:\\Users\\Akbarchik\\Desktop\\OfficeLunchBot\\OfficeLunchBot\\OfficeLunchBot.csproj": {
+    "C:\\Users\\Akbarchik\\Desktop\\OfficelunchBot\\OfficelunchBot\\OfficeLunchBot.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\Akbarchik\\Desktop\\OfficeLunchBot\\OfficeLunchBot\\OfficeLunchBot.csproj",
+        "projectUniqueName": "C:\\Users\\Akbarchik\\Desktop\\OfficelunchBot\\OfficelunchBot\\OfficeLunchBot.csproj",
         "projectName": "OfficeLunchBot",
-        "projectPath": "C:\\Users\\Akbarchik\\Desktop\\OfficeLunchBot\\OfficeLunchBot\\OfficeLunchBot.csproj",
+        "projectPath": "C:\\Users\\Akbarchik\\Desktop\\OfficelunchBot\\OfficelunchBot\\OfficeLunchBot.csproj",
         "packagesPath": "C:\\Users\\Akbarchik\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\Akbarchik\\Desktop\\OfficeLunchBot\\OfficeLunchBot\\obj\\",
+        "outputPath": "C:\\Users\\Akbarchik\\Desktop\\OfficelunchBot\\OfficelunchBot\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\Akbarchik\\AppData\\Roaming\\NuGet\\NuGet.Config"

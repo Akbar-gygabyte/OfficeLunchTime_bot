@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "6DJEuwBM+Pk=",
+  "dgSpecHash": "aLx9Dl7+wyo=",
   "success": true,
-  "projectFilePath": "C:\\Users\\Akbarchik\\Desktop\\OfficeLunchBot\\OfficeLunchBot\\OfficeLunchBot.csproj",
+  "projectFilePath": "C:\\Users\\Akbarchik\\Desktop\\OfficelunchBot\\OfficelunchBot\\OfficeLunchBot.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\Akbarchik\\.nuget\\packages\\microsoft.data.sqlite\\9.0.10\\microsoft.data.sqlite.9.0.10.nupkg.sha512",
     "C:\\Users\\Akbarchik\\.nuget\\packages\\microsoft.data.sqlite.core\\9.0.10\\microsoft.data.sqlite.core.9.0.10.nupkg.sha512",

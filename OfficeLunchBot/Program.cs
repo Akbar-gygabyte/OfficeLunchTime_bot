@@ -30,7 +30,7 @@ class Program
         Console.OutputEncoding = Encoding.UTF8;
         LoadResponses();
 
-        string token = "8345872765:AAFCkGFu7Hlx0KG9r3lRIkjeTFQ5aPL15kU"; // вставь сюда токен бота
+        string token = "ВАШ_БОТ_ТОКЕН"; // вставь сюда токен бота
         var bot = new TelegramBotClient(token);
 
         using CancellationTokenSource cts = new();
@@ -44,100 +44,80 @@ class Program
         var me = await bot.GetMeAsync();
         Console.WriteLine($"✅ Бот @{me.Username} запущен. Нажми Ctrl+C для выхода.");
 
-        // Запуск ежедневных задач
-        _ = ScheduleDailyPoll(bot);
+        _ = ScheduleDailyReminder(bot);
         _ = ScheduleDailyReport(bot);
-        _ = ScheduleReminder(bot);
-
 
         Console.ReadLine();
         cts.Cancel();
     }
 
-    // === Напоминание в 10:00 тем, кто ещё не ответил ===
-static async Task ScheduleReminder(ITelegramBotClient bot)
-{
-    TimeZoneInfo tz = TimeZoneInfo.FindSystemTimeZoneById("Asia/Tashkent");
-
-    while (true)
+    static async Task HandleUpdateAsync(ITelegramBotClient bot, Update update, CancellationToken cancellationToken)
     {
-        DateTime now = TimeZoneInfo.ConvertTime(DateTime.Now, tz);
-        DateTime next10 = DateTime.Today.AddHours(10);
-        if (now.TimeOfDay >= TimeSpan.FromHours(10))
-            next10 = next10.AddDays(1);
-
-        TimeSpan delay = next10 - now;
-        Console.WriteLine($"⏰ Следующее напоминание через {delay.Hours}ч {delay.Minutes}м");
-        await Task.Delay(delay);
-
-        foreach (var emp in employees.Where(e => string.IsNullOrEmpty(e.OfficeChoice) || string.IsNullOrEmpty(e.LunchChoice)))
+        if (update.Type == UpdateType.Message && update.Message != null)
         {
-            await bot.SendTextMessageAsync(emp.ChatId, "Привет! Похоже, ты ещё не ответил на опрос. Пожалуйста, выбери свой офис и обед.");
-        }
-    }
-}
+            var chatId = update.Message.Chat.Id;
+            var text = update.Message.Text;
 
+            // Игнорируем сообщения из канала админов
+            if (chatId == AdminChannelId) return;
 
-  static async Task HandleUpdateAsync(ITelegramBotClient bot, Update update, CancellationToken cancellationToken)
-{
-    if (update.Type == UpdateType.Message && update.Message != null)
-    {
-        var chatId = update.Message.Chat.Id;
-
-        // 🔹 Игнорируем все сообщения, которые пришли не из лички
-        if (update.Message.Chat.Type != ChatType.Private)
-            return;
-
-        var text = update.Message.Text;
-
-        if (text == "/start")
-        {
-            await bot.SendTextMessageAsync(chatId, "Привет! Введи, пожалуйста, своё ФИО:");
-            return;
-        }
-
-        // Если пользователь ещё не зарегистрирован, добавляем его
-        if (!employees.Any(e => e.ChatId == chatId))
-        {
-            employees.Add(new Response
+            if (text == "/start")
             {
-                ChatId = chatId,
-                FIO = text,
-                OfficeChoice = "",
-                LunchChoice = "",
-                Date = DateTime.Today
-            });
-            SaveResponses();
-            await SendOfficePoll(bot, chatId);
+                // Проверяем, не проходил ли пользователь опрос сегодня
+                var existingUser = employees.FirstOrDefault(e => e.ChatId == chatId && e.Date.Date == DateTime.Today);
+                if (existingUser != null)
+                {
+                    await bot.SendTextMessageAsync(chatId, "⚠️ Вы уже прошли опрос сегодня. Повторное прохождение недоступно 😊");
+                    return;
+                }
+
+                await bot.SendTextMessageAsync(chatId, "Привет! Введи, пожалуйста, своё ФИО:");
+                return;
+            }
+
+            // Если пользователь ввёл ФИО
+            if (!employees.Any(e => e.ChatId == chatId && e.Date.Date == DateTime.Today))
+            {
+                employees.Add(new Response
+                {
+                    ChatId = chatId,
+                    FIO = text,
+                    OfficeChoice = "",
+                    LunchChoice = "",
+                    Date = DateTime.Today
+                });
+                SaveResponses();
+                await SendOfficePoll(bot, chatId);
+            }
+        }
+        else if (update.Type == UpdateType.CallbackQuery)
+        {
+            var callback = update.CallbackQuery!;
+            var chatId = callback.Message!.Chat.Id;
+            var user = employees.FirstOrDefault(e => e.ChatId == chatId && e.Date.Date == DateTime.Today);
+
+            if (user == null) return; // безопасность
+
+            if (callback.Data!.StartsWith("office_"))
+            {
+                string choice = callback.Data.Replace("office_", "");
+                user.OfficeChoice = choice;
+
+                await bot.EditMessageReplyMarkupAsync(chatId, callback.Message.MessageId, replyMarkup: null);
+                await bot.SendTextMessageAsync(chatId, "Спасибо! Теперь выбери, нужен ли тебе обед:", replyMarkup: GetLunchKeyboard());
+                SaveResponses();
+            }
+            else if (callback.Data.StartsWith("lunch_"))
+            {
+                string choice = callback.Data.Replace("lunch_", "");
+                user.LunchChoice = choice;
+
+                await bot.EditMessageReplyMarkupAsync(chatId, callback.Message.MessageId, replyMarkup: null);
+                await bot.SendTextMessageAsync(chatId, "Отлично, твой ответ записан ✅");
+                SaveResponses();
+            }
         }
     }
-    else if (update.Type == UpdateType.CallbackQuery)
-    {
-        var callback = update.CallbackQuery!;
-        var chatId = callback.Message!.Chat.Id;
-        var user = employees.FirstOrDefault(e => e.ChatId == chatId);
-
-        if (callback.Data!.StartsWith("office_"))
-        {
-            string choice = callback.Data.Replace("office_", "");
-            if (user != null) user.OfficeChoice = choice;
-
-            await bot.EditMessageReplyMarkupAsync(chatId, callback.Message.MessageId, replyMarkup: null);
-            await bot.SendTextMessageAsync(chatId, "Спасибо! Теперь выбери, нужен ли тебе обед:", replyMarkup: GetLunchKeyboard());
-            SaveResponses();
-        }
-        else if (callback.Data.StartsWith("lunch_"))
-        {
-            string choice = callback.Data.Replace("lunch_", "");
-            if (user != null) user.LunchChoice = choice;
-
-            await bot.EditMessageReplyMarkupAsync(chatId, callback.Message.MessageId, replyMarkup: null);
-            await bot.SendTextMessageAsync(chatId, "Отлично, твой ответ записан ✅");
-            SaveResponses();
-        }
-    }
-}
-
 
     static InlineKeyboardMarkup GetLunchKeyboard()
     {
@@ -169,26 +149,27 @@ static async Task ScheduleReminder(ITelegramBotClient bot)
         await bot.SendTextMessageAsync(chatId, "Ты сегодня работаешь из офиса или нет?", replyMarkup: keyboard);
     }
 
-    static async Task ScheduleDailyPoll(ITelegramBotClient bot)
+    // Напоминание в 10:00 всем пользователям
+    static async Task ScheduleDailyReminder(ITelegramBotClient bot)
     {
         TimeZoneInfo tz = TimeZoneInfo.FindSystemTimeZoneById("Asia/Tashkent");
 
         while (true)
         {
             DateTime now = TimeZoneInfo.ConvertTime(DateTime.Now, tz);
-            DateTime next9 = DateTime.Today.AddHours(9);
-            if (now.TimeOfDay >= TimeSpan.FromHours(9))
-                next9 = next9.AddDays(1);
+            DateTime next10 = DateTime.Today.AddHours(10);
+            if (now.TimeOfDay >= TimeSpan.FromHours(10))
+                next10 = next10.AddDays(1);
 
-            TimeSpan delay = next9 - now;
-            Console.WriteLine($"⏰ Следующий опрос через {delay.Hours}ч {delay.Minutes}м");
+            TimeSpan delay = next10 - now;
             await Task.Delay(delay);
 
             foreach (var emp in employees)
-                await SendOfficePoll(bot, emp.ChatId);
+                await bot.SendTextMessageAsync(emp.ChatId, "🕙 Напоминание: пожалуйста, пройди ежедневный опрос!");
         }
     }
 
+    // Ежедневный отчёт в 11:00
     static async Task ScheduleDailyReport(ITelegramBotClient bot)
     {
         TimeZoneInfo tz = TimeZoneInfo.FindSystemTimeZoneById("Asia/Tashkent");
@@ -201,12 +182,10 @@ static async Task ScheduleReminder(ITelegramBotClient bot)
                 next11 = next11.AddDays(1);
 
             TimeSpan delay = next11 - now;
-            Console.WriteLine($"⏰ Следующий отчет через {delay.Hours}ч {delay.Minutes}м");
             await Task.Delay(delay);
-            
+
             await SendDailyReport(bot);
 
-            // 🔹 Сброс данных после отчёта
             employees.Clear();
             SaveResponses();
             Console.WriteLine("♻️ Ответы пользователей сброшены для нового дня.");
