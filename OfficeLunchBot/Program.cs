@@ -30,7 +30,7 @@ class Program
         Console.OutputEncoding = Encoding.UTF8;
         LoadResponses();
 
-        string token = "ВАШ_БОТ_ТОКЕН"; // вставь сюда токен бота
+        string token = "8345872765:AAFCkGFu7Hlx0KG9r3lRIkjeTFQ5aPL15kU"; // вставь сюда токен бота
         var bot = new TelegramBotClient(token);
 
         using CancellationTokenSource cts = new();
