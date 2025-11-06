@@ -1,14 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
+﻿using System.Text;
 using Telegram.Bot;
-using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 
 class Response
 {
@@ -25,52 +21,47 @@ class Program
     const string DataFile = "responses.csv";
     const long AdminChannelId = -1003112040803;
 
+    static string Token = "8345872765:AAFCkGFu7Hlx0KG9r3lRIkjeTFQ5aPL15kU";
+    static TelegramBotClient bot = new(Token);
 
     static async Task Main()
     {
         Console.OutputEncoding = Encoding.UTF8;
         LoadResponses();
 
-        // ✅ Токен теперь берётся напрямую из кода
-        string token = "8345872765:AAFCkGFu7Hlx0KG9r3lRIkjeTFQ5aPL15kU";
+        var builder = WebApplication.CreateBuilder();
+        var app = builder.Build();
 
-        var bot = new TelegramBotClient(token);
-
-        using CancellationTokenSource cts = new();
-        ReceiverOptions receiverOptions = new()
+        // Endpoint для webhook
+        app.MapPost("/webhook", async (HttpRequest request) =>
         {
-            AllowedUpdates = Array.Empty<UpdateType>()
-        };
+            var update = await request.ReadFromJsonAsync<Update>();
+            if (update != null)
+                await HandleUpdateAsync(update);
+            return Results.Ok();
+        });
 
-        bot.StartReceiving(HandleUpdateAsync, HandleErrorAsync, receiverOptions, cts.Token);
+        // Порт берём из Render
+        var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
+        var url = $"https://{Environment.GetEnvironmentVariable("RENDER_EXTERNAL_HOSTNAME")}";
+        await bot.SetWebhookAsync($"{url}/webhook");
 
-        var me = await bot.GetMeAsync();
-        Console.WriteLine($"✅ Бот @{me.Username} запущен. Нажми Ctrl+C для выхода.");
-
-        _ = ScheduleDailyReminder(bot);
-        _ = ScheduleDailyReport(bot);
-
-        Console.ReadLine();
-        cts.Cancel();
+        // Запуск ASP.NET сервера
+        Console.WriteLine($"✅ Бот запущен и слушает вебхук на /webhook");
+        app.Run($"http://0.0.0.0:{port}");
     }
 
-
-
-
-
-    static async Task HandleUpdateAsync(ITelegramBotClient bot, Update update, CancellationToken cancellationToken)
+    static async Task HandleUpdateAsync(Update update)
     {
         if (update.Type == UpdateType.Message && update.Message != null)
         {
             var chatId = update.Message.Chat.Id;
             var text = update.Message.Text;
 
-            // Игнорируем сообщения из канала админов
             if (chatId == AdminChannelId) return;
 
             if (text == "/start")
             {
-                // Проверяем, не проходил ли пользователь опрос сегодня
                 var existingUser = employees.FirstOrDefault(e => e.ChatId == chatId && e.Date.Date == DateTime.Today);
                 if (existingUser != null)
                 {
@@ -82,7 +73,6 @@ class Program
                 return;
             }
 
-            // Если пользователь ввёл ФИО
             if (!employees.Any(e => e.ChatId == chatId && e.Date.Date == DateTime.Today))
             {
                 employees.Add(new Response
@@ -94,7 +84,7 @@ class Program
                     Date = DateTime.Today
                 });
                 SaveResponses();
-                await SendOfficePoll(bot, chatId);
+                await SendOfficePoll(chatId);
             }
         }
         else if (update.Type == UpdateType.CallbackQuery)
@@ -103,7 +93,7 @@ class Program
             var chatId = callback.Message!.Chat.Id;
             var user = employees.FirstOrDefault(e => e.ChatId == chatId && e.Date.Date == DateTime.Today);
 
-            if (user == null) return; // безопасность
+            if (user == null) return;
 
             if (callback.Data!.StartsWith("office_"))
             {
@@ -138,7 +128,7 @@ class Program
         });
     }
 
-    static async Task SendOfficePoll(ITelegramBotClient bot, long chatId)
+    static async Task SendOfficePoll(long chatId)
     {
         InlineKeyboardMarkup keyboard = new(new[]
         {
@@ -154,67 +144,6 @@ class Program
         });
 
         await bot.SendTextMessageAsync(chatId, "Ты сегодня работаешь из офиса или нет?", replyMarkup: keyboard);
-    }
-
-    // Напоминание в 10:00 всем пользователям
-    static async Task ScheduleDailyReminder(ITelegramBotClient bot)
-    {
-        TimeZoneInfo tz = TimeZoneInfo.FindSystemTimeZoneById("Asia/Tashkent");
-
-        while (true)
-        {
-            DateTime now = TimeZoneInfo.ConvertTime(DateTime.Now, tz);
-            DateTime next10 = DateTime.Today.AddHours(10);
-            if (now.TimeOfDay >= TimeSpan.FromHours(10))
-                next10 = next10.AddDays(1);
-
-            TimeSpan delay = next10 - now;
-            await Task.Delay(delay);
-
-            foreach (var emp in employees)
-                await bot.SendTextMessageAsync(emp.ChatId, "🕙 Напоминание: пожалуйста, пройди ежедневный опрос!");
-        }
-    }
-
-    // Ежедневный отчёт в 11:00
-    static async Task ScheduleDailyReport(ITelegramBotClient bot)
-    {
-        TimeZoneInfo tz = TimeZoneInfo.FindSystemTimeZoneById("Asia/Tashkent");
-
-        while (true)
-        {
-            DateTime now = TimeZoneInfo.ConvertTime(DateTime.Now, tz);
-            DateTime next11 = DateTime.Today.AddHours(11);
-            if (now.TimeOfDay >= TimeSpan.FromHours(11))
-                next11 = next11.AddDays(1);
-
-            TimeSpan delay = next11 - now;
-            await Task.Delay(delay);
-
-            await SendDailyReport(bot);
-
-            employees.Clear();
-            SaveResponses();
-            Console.WriteLine("♻️ Ответы пользователей сброшены для нового дня.");
-        }
-    }
-
-    static async Task SendDailyReport(ITelegramBotClient bot)
-    {
-        var todayResponses = employees.Where(e => e.Date.Date == DateTime.Today).ToList();
-
-        var front = todayResponses.Where(e => e.OfficeChoice == "Front").Select(e => e.FIO).ToList();
-        var back = todayResponses.Where(e => e.OfficeChoice == "Back").Select(e => e.FIO).ToList();
-        var no = todayResponses.Where(e => e.OfficeChoice == "No").Select(e => e.FIO).ToList();
-
-        string report =
-            $"📊 *Отчёт за {DateTime.Today:dd.MM.yyyy}*\n\n" +
-            $"🏢 *Front офис* ({front.Count}): {string.Join(", ", front)}\n" +
-            $"💻 *Back офис* ({back.Count}): {string.Join(", ", back)}\n" +
-            $"🚫 *Не придут* ({no.Count}): {string.Join(", ", no)}\n";
-
-        await bot.SendTextMessageAsync(AdminChannelId, report, parseMode: ParseMode.Markdown);
-        Console.WriteLine("✅ Отчёт отправлен в канал админов");
     }
 
     static void SaveResponses()
@@ -258,11 +187,5 @@ class Program
         {
             Console.WriteLine($"Ошибка загрузки CSV: {ex.Message}");
         }
-    }
-
-    static Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken)
-    {
-        Console.WriteLine($"Ошибка: {exception.Message}");
-        return Task.CompletedTask;
     }
 }
