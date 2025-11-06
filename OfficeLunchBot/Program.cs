@@ -41,12 +41,14 @@ class Program
             return Results.Ok();
         });
 
-        // Порт берём из Render
+        // Порт и URL для Render
         var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
         var url = $"https://{Environment.GetEnvironmentVariable("RENDER_EXTERNAL_HOSTNAME")}";
         await bot.SetWebhookAsync($"{url}/webhook");
 
-        // Запуск ASP.NET сервера
+        // Запуск таймеров: опрос 9:00, напоминание 10:00, отчёт 11:00
+        StartScheduledTasks();
+
         Console.WriteLine($"✅ Бот запущен и слушает вебхук на /webhook");
         app.Run($"http://0.0.0.0:{port}");
     }
@@ -62,29 +64,10 @@ class Program
 
             if (text == "/start")
             {
-                var existingUser = employees.FirstOrDefault(e => e.ChatId == chatId && e.Date.Date == DateTime.Today);
-                if (existingUser != null)
-                {
-                    await bot.SendTextMessageAsync(chatId, "⚠️ Вы уже прошли опрос сегодня. Повторное прохождение недоступно 😊");
-                    return;
-                }
-
-                await bot.SendTextMessageAsync(chatId, "Привет! Введи, пожалуйста, своё ФИО:");
+                await bot.SendTextMessageAsync(chatId,
+                    "Привет! 👋\nЯ бот для ежедневного опроса о приходе в офис и обеде.\n" +
+                    "Опрос можно пройти только в 9:00. Если вы уже прошли опрос сегодня — бот об этом сообщит автоматически.");
                 return;
-            }
-
-            if (!employees.Any(e => e.ChatId == chatId && e.Date.Date == DateTime.Today))
-            {
-                employees.Add(new Response
-                {
-                    ChatId = chatId,
-                    FIO = text,
-                    OfficeChoice = "",
-                    LunchChoice = "",
-                    Date = DateTime.Today
-                });
-                SaveResponses();
-                await SendOfficePoll(chatId);
             }
         }
         else if (update.Type == UpdateType.CallbackQuery)
@@ -93,7 +76,12 @@ class Program
             var chatId = callback.Message!.Chat.Id;
             var user = employees.FirstOrDefault(e => e.ChatId == chatId && e.Date.Date == DateTime.Today);
 
-            if (user == null) return;
+            if (user == null)
+            {
+                // Пользователь пытается пройти опрос вне 9:00
+                await bot.SendTextMessageAsync(chatId, "⏰ Опрос можно пройти только в 9:00!");
+                return;
+            }
 
             if (callback.Data!.StartsWith("office_"))
             {
@@ -144,6 +132,102 @@ class Program
         });
 
         await bot.SendTextMessageAsync(chatId, "Ты сегодня работаешь из офиса или нет?", replyMarkup: keyboard);
+    }
+
+    static void StartScheduledTasks()
+    {
+        TimeZoneInfo tz = TimeZoneInfo.FindSystemTimeZoneById("Asia/Tashkent");
+
+        // 9:00 — ежедневный опрос
+        _ = Task.Run(async () =>
+        {
+            while (true)
+            {
+                var now = TimeZoneInfo.ConvertTime(DateTime.Now, tz);
+                var next9 = DateTime.Today.AddHours(9);
+                if (now.TimeOfDay >= TimeSpan.FromHours(9))
+                    next9 = next9.AddDays(1);
+
+                var delay = next9 - now;
+                await Task.Delay(delay);
+
+                foreach (var emp in employees)
+                {
+                    if (!employees.Any(e => e.ChatId == emp.ChatId && e.Date.Date == DateTime.Today))
+                    {
+                        employees.Add(new Response
+                        {
+                            ChatId = emp.ChatId,
+                            FIO = "", // можно заполнить заранее
+                            OfficeChoice = "",
+                            LunchChoice = "",
+                            Date = DateTime.Today
+                        });
+                        await SendOfficePoll(emp.ChatId);
+                    }
+                }
+                Console.WriteLine("📝 Ежедневный опрос отправлен всем сотрудникам в 9:00");
+            }
+        });
+
+        // 10:00 — напоминание
+        _ = Task.Run(async () =>
+        {
+            while (true)
+            {
+                var now = TimeZoneInfo.ConvertTime(DateTime.Now, tz);
+                var next10 = DateTime.Today.AddHours(10);
+                if (now.TimeOfDay >= TimeSpan.FromHours(10))
+                    next10 = next10.AddDays(1);
+
+                var delay = next10 - now;
+                await Task.Delay(delay);
+
+                foreach (var emp in employees)
+                    await bot.SendTextMessageAsync(emp.ChatId, "🕙 Напоминание: пожалуйста, пройди ежедневный опрос!");
+            }
+        });
+
+        // 11:00 — отчёт
+        _ = Task.Run(async () =>
+        {
+            while (true)
+            {
+                var now = TimeZoneInfo.ConvertTime(DateTime.Now, tz);
+                var next11 = DateTime.Today.AddHours(11);
+                if (now.TimeOfDay >= TimeSpan.FromHours(11))
+                    next11 = next11.AddDays(1);
+
+                var delay = next11 - now;
+                await Task.Delay(delay);
+
+                await SendDailyReport();
+
+                employees.Clear();
+                SaveResponses();
+                Console.WriteLine("♻️ Ответы пользователей сброшены для нового дня.");
+            }
+        });
+    }
+
+    static async Task SendDailyReport()
+    {
+        var todayResponses = employees.Where(e => e.Date.Date == DateTime.Today).ToList();
+
+        var front = todayResponses.Where(e => e.OfficeChoice == "Front").ToList();
+        var back = todayResponses.Where(e => e.OfficeChoice == "Back").ToList();
+        var no = todayResponses.Where(e => e.OfficeChoice == "No").ToList();
+
+        string FormatUser(Response e) => $"{e.FIO} ({(e.LunchChoice == "Yes" ? "🍱 обед" : "❌ без обеда")})";
+
+        string report =
+            $"📊 *Отчёт за {DateTime.Today:dd.MM.yyyy}*\n\n" +
+            $"🏢 *Front офис* ({front.Count}): {string.Join(", ", front.Select(FormatUser))}\n" +
+            $"💻 *Back офис* ({back.Count}): {string.Join(", ", back.Select(FormatUser))}\n" +
+            $"🚫 *Не придут* ({no.Count}): {string.Join(", ", no.Select(FormatUser))}\n";
+
+        await bot.SendTextMessageAsync(AdminChannelId, report, parseMode: ParseMode.Markdown);
+        Console.WriteLine("✅ Отчёт с обедом отправлен в канал админов");
     }
 
     static void SaveResponses()
