@@ -27,39 +27,59 @@ class Program
 
     static List<Response> employees = new();
 
-    static async Task Main()
+static async Task Main()
+{
+    Console.OutputEncoding = Encoding.UTF8;
+
+    LoadResponses(); // загружаем CSV
+
+    string token = Environment.GetEnvironmentVariable("BOT_TOKEN")!;
+    if (string.IsNullOrEmpty(token))
     {
-        Console.OutputEncoding = Encoding.UTF8;
-
-        LoadResponses();
-
-        string token = Environment.GetEnvironmentVariable("BOT_TOKEN")!;
-        if (string.IsNullOrEmpty(token))
-        {
-            Console.WriteLine("❌ BOT_TOKEN is missing!");
-            return;
-        }
-
-        var bot = new TelegramBotClient(token);
-
-        using CancellationTokenSource cts = new();
-        ReceiverOptions receiverOptions = new()
-        {
-            AllowedUpdates = Array.Empty<UpdateType>()
-        };
-
-        bot.StartReceiving(HandleUpdateAsync, HandleErrorAsync, receiverOptions, cts.Token);
-
-        var me = await bot.GetMe();
-        Console.WriteLine($"✅ Бот @{me.Username} запущен.");
-
-        // Планировщики
-        _ = ScheduleDailyPoll(bot);
-        _ = ScheduleDailyReport(bot);
-
-        // держим процесс живым
-        await Task.Delay(-1);
+        Console.WriteLine("❌ BOT_TOKEN is missing!");
+        return;
     }
+
+    var bot = new TelegramBotClient(token);
+
+    // -------------------- Удаляем старый webhook --------------------
+    try
+    {
+        await bot.DeleteWebhook(); // теперь await
+        Console.WriteLine("✅ Старый webhook удалён.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"⚠ Не удалось удалить webhook: {ex.Message}");
+    }
+
+    // -------------------- Настройка long polling --------------------
+    using CancellationTokenSource cts = new();
+    ReceiverOptions receiverOptions = new()
+    {
+        AllowedUpdates = Array.Empty<UpdateType>()
+    };
+
+    bot.StartReceiving(
+        updateHandler: HandleUpdateAsync,
+        errorHandler: HandleErrorAsync,
+        receiverOptions: receiverOptions,
+        cancellationToken: cts.Token
+    );
+
+    var me = await bot.GetMe(); // await нужен, иначе вернется Task<User>
+    Console.WriteLine($"✅ Бот @{me.Username} запущен на Render.");
+
+    // -------------------- Планировщики --------------------
+    _ = ScheduleDailyPoll(bot);
+    _ = ScheduleDailyReport(bot);
+
+    // -------------------- Держим процесс живым --------------------
+    await Task.Delay(-1);
+}
+
+
+
 
     // ======================== UPDATE HANDLER ========================
 
