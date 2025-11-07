@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("OfficeLunchBot")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+888193782744d0240c964fd4fb1c1ec258f441c2")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+756cda904942a0a69b77b9e4359c0cdb828aad91")]
 [assembly: System.Reflection.AssemblyProductAttribute("OfficeLunchBot")]
 [assembly: System.Reflection.AssemblyTitleAttribute("OfficeLunchBot")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
