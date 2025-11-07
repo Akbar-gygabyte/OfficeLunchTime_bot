@@ -31,7 +31,8 @@ static async Task Main()
 {
     Console.OutputEncoding = Encoding.UTF8;
 
-    LoadResponses(); // загружаем CSV
+    // Загружаем ответы из CSV
+    LoadResponses();
 
     string token = Environment.GetEnvironmentVariable("BOT_TOKEN")!;
     if (string.IsNullOrEmpty(token))
@@ -45,7 +46,7 @@ static async Task Main()
     // -------------------- Удаляем старый webhook --------------------
     try
     {
-        await bot.DeleteWebhook(); // теперь await
+        await bot.DeleteWebhook(); // удаляем webhook
         Console.WriteLine("✅ Старый webhook удалён.");
     }
     catch (Exception ex)
@@ -53,15 +54,23 @@ static async Task Main()
         Console.WriteLine($"⚠ Не удалось удалить webhook: {ex.Message}");
     }
 
+    // -------------------- Сбрасываем старые getUpdates --------------------
+    try
+    {
+        await bot.GetUpdatesAsync(offset: int.MaxValue); // очищаем очередь обновлений
+        Console.WriteLine("✅ Старые getUpdates очищены.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"⚠ Не удалось очистить getUpdates: {ex.Message}");
+    }
+
     // -------------------- Настройка long polling --------------------
     using CancellationTokenSource cts = new();
-        ReceiverOptions receiverOptions = new()
-        {
-            AllowedUpdates = Array.Empty<UpdateType>()
-        };
-    
-await bot.DeleteWebhook(); // удаляет все вебхуки
-await bot.GetUpdatesAsync(offset: int.MaxValue); // сбрасываем "все старые обновления"
+    ReceiverOptions receiverOptions = new()
+    {
+        AllowedUpdates = Array.Empty<UpdateType>()
+    };
 
     bot.StartReceiving(
         updateHandler: HandleUpdateAsync,
@@ -70,7 +79,8 @@ await bot.GetUpdatesAsync(offset: int.MaxValue); // сбрасываем "все
         cancellationToken: cts.Token
     );
 
-    var me = await bot.GetMe(); // await нужен, иначе вернется Task<User>
+    // Получаем информацию о боте
+    var me = await bot.GetMe();
     Console.WriteLine($"✅ Бот @{me.Username} запущен на Render.");
 
     // -------------------- Планировщики --------------------
@@ -80,6 +90,7 @@ await bot.GetUpdatesAsync(offset: int.MaxValue); // сбрасываем "все
     // -------------------- Держим процесс живым --------------------
     await Task.Delay(-1);
 }
+
 
 
 
