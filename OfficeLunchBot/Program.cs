@@ -1,293 +1,305 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
+﻿// using System;
+// using System.Collections.Generic;
+// using System.IO;
+// using System.Linq;
+// using System.Text;
+// using System.Threading;
+// using System.Threading.Tasks;
+// using Telegram.Bot;
+// using Telegram.Bot.Polling;
+// using Telegram.Bot.Types;
+// using Telegram.Bot.Types.Enums;
+// using Telegram.Bot.Types.ReplyMarkups;
+
+
 using Telegram.Bot;
-using Telegram.Bot.Polling;
-using Telegram.Bot.Types;
-using Telegram.Bot.Types.Enums;
-using Telegram.Bot.Types.ReplyMarkups;
 
-class Response
-{
-    public long ChatId { get; set; }
-    public string FIO { get; set; } = "";
-    public string OfficeChoice { get; set; } = "";
-    public string LunchChoice { get; set; } = "";
-    public DateTime Date { get; set; }
-}
+string token = Environment.GetEnvironmentVariable("BOT_TOKEN")!;
+var bot = new TelegramBotClient(token);
 
-class Program
-{
-    const string DataFile = "responses.csv";
-    const long AdminChannelId = -1003112040803; // сюда отправляем отчёт
+await bot.DeleteWebhook();                  // удаляем webhook
+await bot.GetUpdatesAsync(offset: int.MaxValue); // сбрасываем старые обновления
 
-    static List<Response> employees = new();
-
-static async Task Main()
-{
-    Console.OutputEncoding = Encoding.UTF8;
-
-    // Загружаем ответы из CSV
-    LoadResponses();
-
-    string token = Environment.GetEnvironmentVariable("BOT_TOKEN")!;
-    if (string.IsNullOrEmpty(token))
-    {
-        Console.WriteLine("❌ BOT_TOKEN is missing!");
-        return;
-    }
-
-    var bot = new TelegramBotClient(token);
-
-    // -------------------- Удаляем старый webhook --------------------
-    try
-    {
-        await bot.DeleteWebhook(); // удаляем webhook
-        Console.WriteLine("✅ Старый webhook удалён.");
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"⚠ Не удалось удалить webhook: {ex.Message}");
-    }
-
-    // -------------------- Сбрасываем старые getUpdates --------------------
-    try
-    {
-        await bot.GetUpdatesAsync(offset: int.MaxValue); // очищаем очередь обновлений
-        Console.WriteLine("✅ Старые getUpdates очищены.");
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"⚠ Не удалось очистить getUpdates: {ex.Message}");
-    }
-
-    // -------------------- Настройка long polling --------------------
-    using CancellationTokenSource cts = new();
-    ReceiverOptions receiverOptions = new()
-    {
-        AllowedUpdates = Array.Empty<UpdateType>()
-    };
-
-    bot.StartReceiving(
-        updateHandler: HandleUpdateAsync,
-        errorHandler: HandleErrorAsync,
-        receiverOptions: receiverOptions,
-        cancellationToken: cts.Token
-    );
-
-    // Получаем информацию о боте
-    var me = await bot.GetMe();
-    Console.WriteLine($"✅ Бот @{me.Username} запущен на Render.");
-
-    // -------------------- Планировщики --------------------
-    _ = ScheduleDailyPoll(bot);
-    _ = ScheduleDailyReport(bot);
-
-    // -------------------- Держим процесс живым --------------------
-    await Task.Delay(-1);
-}
+Console.WriteLine("✅ Очистка getUpdates выполнена.");
 
 
+// class Response
+// {
+//     public long ChatId { get; set; }
+//     public string FIO { get; set; } = "";
+//     public string OfficeChoice { get; set; } = "";
+//     public string LunchChoice { get; set; } = "";
+//     public DateTime Date { get; set; }
+// }
+
+// class Program
+// {
+//     const string DataFile = "responses.csv";
+//     const long AdminChannelId = -1003112040803; // сюда отправляем отчёт
+
+//     static List<Response> employees = new();
+
+// static async Task Main()
+// {
+//     Console.OutputEncoding = Encoding.UTF8;
+
+//     // Загружаем ответы из CSV
+//     LoadResponses();
+
+//     string token = Environment.GetEnvironmentVariable("BOT_TOKEN")!;
+//     if (string.IsNullOrEmpty(token))
+//     {
+//         Console.WriteLine("❌ BOT_TOKEN is missing!");
+//         return;
+//     }
+
+//     var bot = new TelegramBotClient(token);
+
+//     // -------------------- Удаляем старый webhook --------------------
+//     try
+//     {
+//         await bot.DeleteWebhook(); // удаляем webhook
+//         Console.WriteLine("✅ Старый webhook удалён.");
+//     }
+//     catch (Exception ex)
+//     {
+//         Console.WriteLine($"⚠ Не удалось удалить webhook: {ex.Message}");
+//     }
+
+//     // -------------------- Сбрасываем старые getUpdates --------------------
+//     try
+//     {
+//         await bot.GetUpdatesAsync(offset: int.MaxValue); // очищаем очередь обновлений
+//         Console.WriteLine("✅ Старые getUpdates очищены.");
+//     }
+//     catch (Exception ex)
+//     {
+//         Console.WriteLine($"⚠ Не удалось очистить getUpdates: {ex.Message}");
+//     }
+
+//     // -------------------- Настройка long polling --------------------
+//     using CancellationTokenSource cts = new();
+//     ReceiverOptions receiverOptions = new()
+//     {
+//         AllowedUpdates = Array.Empty<UpdateType>()
+//     };
+
+//     bot.StartReceiving(
+//         updateHandler: HandleUpdateAsync,
+//         errorHandler: HandleErrorAsync,
+//         receiverOptions: receiverOptions,
+//         cancellationToken: cts.Token
+//     );
+
+//     // Получаем информацию о боте
+//     var me = await bot.GetMe();
+//     Console.WriteLine($"✅ Бот @{me.Username} запущен на Render.");
+
+//     // -------------------- Планировщики --------------------
+//     _ = ScheduleDailyPoll(bot);
+//     _ = ScheduleDailyReport(bot);
+
+//     // -------------------- Держим процесс живым --------------------
+//     await Task.Delay(-1);
+// }
 
 
 
-    // ======================== UPDATE HANDLER ========================
 
-    static async Task HandleUpdateAsync(ITelegramBotClient bot, Update update, CancellationToken cancel)
-    {
-        if (update.Message is { } message && message.Text is string text)
-        {
-            long chatId = message.Chat.Id;
-            var user = employees.FirstOrDefault(e => e.ChatId == chatId);
 
-            if (text == "/start")
-            {
-                if (user != null && user.Date.Date == DateTime.Today && user.OfficeChoice != "")
-                {
-                    await bot.SendMessage(chatId, "❗ Вы уже прошли опрос сегодня.");
-                    return;
-                }
+//     // ======================== UPDATE HANDLER ========================
 
-                await bot.SendMessage(chatId, "Введите своё ФИО:");
-                return;
-            }
+//     static async Task HandleUpdateAsync(ITelegramBotClient bot, Update update, CancellationToken cancel)
+//     {
+//         if (update.Message is { } message && message.Text is string text)
+//         {
+//             long chatId = message.Chat.Id;
+//             var user = employees.FirstOrDefault(e => e.ChatId == chatId);
 
-            if (user == null)
-            {
-                employees.Add(new Response
-                {
-                    ChatId = chatId,
-                    FIO = text,
-                    Date = DateTime.Today
-                });
+//             if (text == "/start")
+//             {
+//                 if (user != null && user.Date.Date == DateTime.Today && user.OfficeChoice != "")
+//                 {
+//                     await bot.SendMessage(chatId, "❗ Вы уже прошли опрос сегодня.");
+//                     return;
+//                 }
 
-                SaveResponses();
+//                 await bot.SendMessage(chatId, "Введите своё ФИО:");
+//                 return;
+//             }
 
-                await SendOfficePoll(bot, chatId);
-            }
-        }
+//             if (user == null)
+//             {
+//                 employees.Add(new Response
+//                 {
+//                     ChatId = chatId,
+//                     FIO = text,
+//                     Date = DateTime.Today
+//                 });
 
-        if (update.CallbackQuery is { } cb)
-        {
-            long chatId = cb.Message!.Chat.Id;
-            var user = employees.FirstOrDefault(e => e.ChatId == chatId);
-            if (user == null) return;
+//                 SaveResponses();
 
-            if (user.OfficeChoice != "" && user.Date.Date == DateTime.Today)
-            {
-                await bot.SendMessage(chatId, "✅ Вы уже ответили сегодня.");
-                return;
-            }
+//                 await SendOfficePoll(bot, chatId);
+//             }
+//         }
 
-            if (cb.Data!.StartsWith("office_"))
-            {
-                string choice = cb.Data.Replace("office_", "");
-                user.OfficeChoice = choice;
-                SaveResponses();
+//         if (update.CallbackQuery is { } cb)
+//         {
+//             long chatId = cb.Message!.Chat.Id;
+//             var user = employees.FirstOrDefault(e => e.ChatId == chatId);
+//             if (user == null) return;
 
-                await bot.EditMessageReplyMarkup(chatId, cb.Message.MessageId, null);
-                await bot.SendMessage(chatId, "Теперь выберите обед:", replyMarkup: GetLunchKeyboard());
-            }
+//             if (user.OfficeChoice != "" && user.Date.Date == DateTime.Today)
+//             {
+//                 await bot.SendMessage(chatId, "✅ Вы уже ответили сегодня.");
+//                 return;
+//             }
 
-            if (cb.Data.StartsWith("lunch_"))
-            {
-                string choice = cb.Data.Replace("lunch_", "");
-                user.LunchChoice = choice;
-                user.Date = DateTime.Today;
-                SaveResponses();
+//             if (cb.Data!.StartsWith("office_"))
+//             {
+//                 string choice = cb.Data.Replace("office_", "");
+//                 user.OfficeChoice = choice;
+//                 SaveResponses();
 
-                await bot.EditMessageReplyMarkup(chatId, cb.Message.MessageId, null);
-                await bot.SendMessage(chatId, "✅ Ответ записан!");
-            }
-        }
-    }
+//                 await bot.EditMessageReplyMarkup(chatId, cb.Message.MessageId, null);
+//                 await bot.SendMessage(chatId, "Теперь выберите обед:", replyMarkup: GetLunchKeyboard());
+//             }
 
-    // ======================== BUTTONS ========================
+//             if (cb.Data.StartsWith("lunch_"))
+//             {
+//                 string choice = cb.Data.Replace("lunch_", "");
+//                 user.LunchChoice = choice;
+//                 user.Date = DateTime.Today;
+//                 SaveResponses();
 
-    static InlineKeyboardMarkup GetLunchKeyboard()
-    {
-        return new InlineKeyboardMarkup(new[]
-        {
-            new []
-            {
-                InlineKeyboardButton.WithCallbackData("🍱 Да", "lunch_Yes"),
-                InlineKeyboardButton.WithCallbackData("🥪 Нет", "lunch_No")
-            }
-        });
-    }
+//                 await bot.EditMessageReplyMarkup(chatId, cb.Message.MessageId, null);
+//                 await bot.SendMessage(chatId, "✅ Ответ записан!");
+//             }
+//         }
+//     }
 
-    static async Task SendOfficePoll(ITelegramBotClient bot, long chatId)
-    {
-        InlineKeyboardMarkup kb = new(new[]
-        {
-            new []
-            {
-                InlineKeyboardButton.WithCallbackData("Front", "office_Front"),
-                InlineKeyboardButton.WithCallbackData("Back", "office_Back")
-            },
-            new []
-            {
-                InlineKeyboardButton.WithCallbackData("Не приду", "office_No")
-            }
-        });
+//     // ======================== BUTTONS ========================
 
-        await bot.SendMessage(chatId, "Где вы сегодня работаете?", replyMarkup: kb);
-    }
+//     static InlineKeyboardMarkup GetLunchKeyboard()
+//     {
+//         return new InlineKeyboardMarkup(new[]
+//         {
+//             new []
+//             {
+//                 InlineKeyboardButton.WithCallbackData("🍱 Да", "lunch_Yes"),
+//                 InlineKeyboardButton.WithCallbackData("🥪 Нет", "lunch_No")
+//             }
+//         });
+//     }
 
-    // ======================== CSV SAVE / LOAD ========================
+//     static async Task SendOfficePoll(ITelegramBotClient bot, long chatId)
+//     {
+//         InlineKeyboardMarkup kb = new(new[]
+//         {
+//             new []
+//             {
+//                 InlineKeyboardButton.WithCallbackData("Front", "office_Front"),
+//                 InlineKeyboardButton.WithCallbackData("Back", "office_Back")
+//             },
+//             new []
+//             {
+//                 InlineKeyboardButton.WithCallbackData("Не приду", "office_No")
+//             }
+//         });
 
-    static void SaveResponses()
-    {
-        using var sw = new StreamWriter(DataFile, false, Encoding.UTF8);
-        sw.WriteLine("ChatId,FIO,OfficeChoice,LunchChoice,Date");
+//         await bot.SendMessage(chatId, "Где вы сегодня работаете?", replyMarkup: kb);
+//     }
 
-        foreach (var e in employees)
-            sw.WriteLine($"{e.ChatId},{e.FIO},{e.OfficeChoice},{e.LunchChoice},{e.Date:yyyy-MM-dd}");
-    }
+//     // ======================== CSV SAVE / LOAD ========================
 
-    static void LoadResponses()
-    {
-        if (!System.IO.File.Exists(DataFile)) return;
+//     static void SaveResponses()
+//     {
+//         using var sw = new StreamWriter(DataFile, false, Encoding.UTF8);
+//         sw.WriteLine("ChatId,FIO,OfficeChoice,LunchChoice,Date");
 
-        var lines = System.IO.File.ReadAllLines(DataFile).Skip(1);
-        foreach (var line in lines)
-        {
-            var p = line.Split(',');
-            if (p.Length < 5) continue;
+//         foreach (var e in employees)
+//             sw.WriteLine($"{e.ChatId},{e.FIO},{e.OfficeChoice},{e.LunchChoice},{e.Date:yyyy-MM-dd}");
+//     }
 
-            employees.Add(new Response
-            {
-                ChatId = long.Parse(p[0]),
-                FIO = p[1],
-                OfficeChoice = p[2],
-                LunchChoice = p[3],
-                Date = DateTime.Parse(p[4])
-            });
-        }
-    }
+//     static void LoadResponses()
+//     {
+//         if (!System.IO.File.Exists(DataFile)) return;
 
-    static Task HandleErrorAsync(ITelegramBotClient bot, Exception ex, CancellationToken token)
-    {
-        Console.WriteLine($"Ошибка Telegram: {ex.Message}");
-        return Task.CompletedTask;
-    }
+//         var lines = System.IO.File.ReadAllLines(DataFile).Skip(1);
+//         foreach (var line in lines)
+//         {
+//             var p = line.Split(',');
+//             if (p.Length < 5) continue;
 
-    // ======================== SCHEDULERS ========================
+//             employees.Add(new Response
+//             {
+//                 ChatId = long.Parse(p[0]),
+//                 FIO = p[1],
+//                 OfficeChoice = p[2],
+//                 LunchChoice = p[3],
+//                 Date = DateTime.Parse(p[4])
+//             });
+//         }
+//     }
 
-    static async Task ScheduleDailyPoll(ITelegramBotClient bot)
-    {
-        while (true)
-        {
-            try
-            {
-                var now = DateTime.UtcNow.AddHours(5); // Tashkent
-                var next = new DateTime(now.Year, now.Month, now.Day, 9, 0, 0);
-                if (next < now) next = next.AddDays(1);
+//     static Task HandleErrorAsync(ITelegramBotClient bot, Exception ex, CancellationToken token)
+//     {
+//         Console.WriteLine($"Ошибка Telegram: {ex.Message}");
+//         return Task.CompletedTask;
+//     }
 
-                var delay = next - now;
-                await Task.Delay(delay);
+//     // ======================== SCHEDULERS ========================
 
-                foreach (var e in employees)
-                {
-                    await SendOfficePoll(bot, e.ChatId);
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Ошибка в ScheduleDailyPoll: {ex.Message}");
-            }
-        }
-    }
+//     static async Task ScheduleDailyPoll(ITelegramBotClient bot)
+//     {
+//         while (true)
+//         {
+//             try
+//             {
+//                 var now = DateTime.UtcNow.AddHours(5); // Tashkent
+//                 var next = new DateTime(now.Year, now.Month, now.Day, 9, 0, 0);
+//                 if (next < now) next = next.AddDays(1);
 
-    static async Task ScheduleDailyReport(ITelegramBotClient bot)
-    {
-        while (true)
-        {
-            try
-            {
-                var now = DateTime.UtcNow.AddHours(5); // Tashkent
-                var next = new DateTime(now.Year, now.Month, now.Day, 11, 0, 0);
-                if (next < now) next = next.AddDays(1);
+//                 var delay = next - now;
+//                 await Task.Delay(delay);
 
-                var delay = next - now;
-                await Task.Delay(delay);
+//                 foreach (var e in employees)
+//                 {
+//                     await SendOfficePoll(bot, e.ChatId);
+//                 }
+//             }
+//             catch (Exception ex)
+//             {
+//                 Console.WriteLine($"Ошибка в ScheduleDailyPoll: {ex.Message}");
+//             }
+//         }
+//     }
 
-                var report = new StringBuilder("📊 Отчёт по сотрудникам:\n");
-                foreach (var e in employees)
-                {
-                    report.AppendLine($"{e.FIO}: Office={e.OfficeChoice}, Lunch={e.LunchChoice}");
-                }
+//     static async Task ScheduleDailyReport(ITelegramBotClient bot)
+//     {
+//         while (true)
+//         {
+//             try
+//             {
+//                 var now = DateTime.UtcNow.AddHours(5); // Tashkent
+//                 var next = new DateTime(now.Year, now.Month, now.Day, 11, 0, 0);
+//                 if (next < now) next = next.AddDays(1);
 
-                await bot.SendMessage(AdminChannelId, report.ToString());
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Ошибка в ScheduleDailyReport: {ex.Message}");
-            }
-        }
-    }
-}
+//                 var delay = next - now;
+//                 await Task.Delay(delay);
+
+//                 var report = new StringBuilder("📊 Отчёт по сотрудникам:\n");
+//                 foreach (var e in employees)
+//                 {
+//                     report.AppendLine($"{e.FIO}: Office={e.OfficeChoice}, Lunch={e.LunchChoice}");
+//                 }
+
+//                 await bot.SendMessage(AdminChannelId, report.ToString());
+//             }
+//             catch (Exception ex)
+//             {
+//                 Console.WriteLine($"Ошибка в ScheduleDailyReport: {ex.Message}");
+//             }
+//         }
+//     }
+// }
