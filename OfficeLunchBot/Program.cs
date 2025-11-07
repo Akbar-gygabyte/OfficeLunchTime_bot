@@ -55,10 +55,13 @@ static async Task Main()
 
     // -------------------- Настройка long polling --------------------
     using CancellationTokenSource cts = new();
-    ReceiverOptions receiverOptions = new()
-    {
-        AllowedUpdates = Array.Empty<UpdateType>()
-    };
+        ReceiverOptions receiverOptions = new()
+        {
+            AllowedUpdates = Array.Empty<UpdateType>()
+        };
+    
+await bot.DeleteWebhook(); // удаляет все вебхуки
+await bot.GetUpdatesAsync(offset: int.MaxValue); // сбрасываем "все старые обновления"
 
     bot.StartReceiving(
         updateHandler: HandleUpdateAsync,
