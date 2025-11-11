@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Telegram.Bot;
@@ -11,196 +9,75 @@ using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
 
-class Response
-{
-    public long ChatId { get; set; }
-    public string FIO { get; set; } = "";
-    public string OfficeChoice { get; set; } = "";
-    public string LunchChoice { get; set; } = "";
-    public DateTime Date { get; set; }
-}
-
 class Program
 {
-    const string DataFile = "responses.csv";
-    const long AdminChannelId = -1003112040803;
-
-    static List<Response> employees = new();
+    static ITelegramBotClient botClient;
 
     static async Task Main()
     {
-        Console.OutputEncoding = Encoding.UTF8;
+        botClient = new TelegramBotClient(Environment.GetEnvironmentVariable("BOT_TOKEN"));
 
-        string token = Environment.GetEnvironmentVariable("BOT_TOKEN")!;
-        if (string.IsNullOrEmpty(token))
+        // Удаляем старый webhook, если есть
+        await botClient.DeleteWebhook();
+
+        var cts = new CancellationTokenSource();
+
+        // Настройки для получения обновлений
+        var receiverOptions = new ReceiverOptions
         {
-            Console.WriteLine("❌ BOT_TOKEN is missing!");
-            return;
-        }
-
-        var bot = new TelegramBotClient(token);
-
-        // Удаляем старый webhook, чтобы использовать getUpdates
-        await bot.DeleteWebhook();
-
-        using var cts = new CancellationTokenSource();
-
-        // ReceiverOptions для Telegram.Bot v22
-        ReceiverOptions receiverOptions = new()
-        {
-            AllowedUpdates = Array.Empty<UpdateType>()
+            AllowedUpdates = Array.Empty<UpdateType>() // все типы обновлений
         };
 
-        // Старт получения апдейтов
-   // Старт получения апдейтов
-bot.StartReceiving(
-    HandleUpdateAsync,
-    HandleErrorAsync,
-    receiverOptions,
-    cts.Token
-);
+        botClient.StartReceiving(
+            HandleUpdateAsync,
+            HandlePollingErrorAsync,
+            receiverOptions,
+            cts.Token
+        );
 
-        var me = await bot.GetMe();
+        var me = await botClient.GetMe();
         Console.WriteLine($"✅ Бот @{me.Username} запущен. Нажми Ctrl+C для выхода.");
 
-        Console.ReadLine();
-        cts.Cancel();
+        Console.CancelKeyPress += (s, e) =>
+        {
+            Console.WriteLine("Остановка бота...");
+            cts.Cancel();
+        };
+
+        // Просто держим приложение запущенным
+        await Task.Delay(-1);
     }
 
-    // ======================== UPDATE HANDLER ========================
-
-    static async Task HandleUpdateAsync(ITelegramBotClient bot, Update update, CancellationToken cancel)
+    static async Task HandleUpdateAsync(ITelegramBotClient bot, Update update, CancellationToken cancellationToken)
     {
-        // MESSAGE
-        if (update.Message is { } message && !string.IsNullOrEmpty(message.Text))
-        {
-            long chatId = message.Chat.Id;
-            var user = employees.FirstOrDefault(e => e.ChatId == chatId);
+        if (update.Type != UpdateType.Message || update.Message.Text == null) return;
 
-            if (message.Text == "/start")
-            {
-                if (user != null && user.Date.Date == DateTime.Today && !string.IsNullOrEmpty(user.OfficeChoice))
+        var chatId = update.Message.Chat.Id;
+        var text = update.Message.Text;
+
+        if (text == "/start")
+        {
+            await bot.SendMessage(chatId, "Привет! Выберите действие:", cancellationToken: cancellationToken,
+                replyMarkup: new InlineKeyboardMarkup(new[]
                 {
-                    await bot.SendMessage(chatId, "❗ Вы уже прошли опрос сегодня.");
-                    return;
-                }
-
-                await bot.SendMessage(chatId, "Введите своё ФИО:");
-                return;
-            }
-
-            if (user == null)
-            {
-                employees.Add(new Response
-                {
-                    ChatId = chatId,
-                    FIO = message.Text,
-                    Date = DateTime.Today
-                });
-
-                SaveResponses();
-                await SendOfficePoll(bot, chatId);
-            }
-        }
-
-        // CALLBACK
-        if (update.CallbackQuery is { } cb)
-        {
-            long chatId = cb.Message!.Chat.Id;
-            var user = employees.FirstOrDefault(e => e.ChatId == chatId);
-            if (user == null) return;
-
-            if (!string.IsNullOrEmpty(user.OfficeChoice) && user.Date.Date == DateTime.Today)
-            {
-                await bot.SendMessage(chatId, "✅ Вы уже ответили сегодня.");
-                return;
-            }
-
-            if (cb.Data!.StartsWith("office_"))
-            {
-                user.OfficeChoice = cb.Data.Replace("office_", "");
-                SaveResponses();
-                await bot.EditMessageReplyMarkup(chatId, cb.Message.MessageId, null);
-                await bot.SendMessage(chatId, "Теперь выберите обед:", replyMarkup: GetLunchKeyboard());
-            }
-
-            if (cb.Data.StartsWith("lunch_"))
-            {
-                user.LunchChoice = cb.Data.Replace("lunch_", "");
-                user.Date = DateTime.Today;
-                SaveResponses();
-                await bot.EditMessageReplyMarkup(chatId, cb.Message.MessageId, null);
-                await bot.SendMessage(chatId, "✅ Ответ записан!");
-            }
+                    new[]
+                    {
+                        InlineKeyboardButton.WithCallbackData("Я иду в офис", "office"),
+                        InlineKeyboardButton.WithCallbackData("Не иду", "home")
+                    }
+                }));
         }
     }
 
-    // ======================== BUTTONS ========================
-
-    static InlineKeyboardMarkup GetLunchKeyboard()
+    static Task HandlePollingErrorAsync(ITelegramBotClient bot, Exception exception, CancellationToken cancellationToken)
     {
-        return new InlineKeyboardMarkup(new[]
-        {
-            new[]
-            {
-                InlineKeyboardButton.WithCallbackData("🍱 Да", "lunch_Yes"),
-                InlineKeyboardButton.WithCallbackData("🥪 Нет", "lunch_No")
-            }
-        });
-    }
-
-    static async Task SendOfficePoll(ITelegramBotClient bot, long chatId)
-    {
-        InlineKeyboardMarkup kb = new(new[]
-        {
-            new[]
-            {
-                InlineKeyboardButton.WithCallbackData("Front", "office_Front"),
-                InlineKeyboardButton.WithCallbackData("Back", "office_Back")
-            },
-            new[]
-            {
-                InlineKeyboardButton.WithCallbackData("Не приду", "office_No")
-            }
-        });
-
-        await bot.SendMessage(chatId, "Где вы сегодня работаете?", replyMarkup: kb);
-    }
-
-    // ======================== CSV SAVE / LOAD ========================
-
-    static void SaveResponses()
-    {
-        using var sw = new StreamWriter(System.IO.File.Open(DataFile, FileMode.Create), Encoding.UTF8);
-        sw.WriteLine("ChatId,FIO,OfficeChoice,LunchChoice,Date");
-        foreach (var e in employees)
-            sw.WriteLine($"{e.ChatId},{e.FIO},{e.OfficeChoice},{e.LunchChoice},{e.Date:yyyy-MM-dd}");
-    }
-
-    static void LoadResponses()
-    {
-        if (!System.IO.File.Exists(DataFile)) return;
-
-        var lines = System.IO.File.ReadAllLines(DataFile).Skip(1);
-        foreach (var line in lines)
-        {
-            var parts = line.Split(',');
-            if (parts.Length < 5) continue;
-
-            employees.Add(new Response
-            {
-                ChatId = long.Parse(parts[0]),
-                FIO = parts[1],
-                OfficeChoice = parts[2],
-                LunchChoice = parts[3],
-                Date = DateTime.Parse(parts[4])
-            });
-        }
-    }
-
-    static Task HandleErrorAsync(ITelegramBotClient bot, Exception ex, CancellationToken token)
-    {
-        Console.WriteLine($"Ошибка Telegram: {ex.Message}");
+        Console.WriteLine($"Ошибка Telegram: {exception.Message}");
         return Task.CompletedTask;
+    }
+
+    // Метод для безопасного чтения файлов
+    static byte[] ReadFileBytes(string path)
+    {
+        return File.Exists(path) ? File.ReadAllBytes(path) : Array.Empty<byte>();
     }
 }
